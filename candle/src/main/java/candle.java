@@ -1,7 +1,7 @@
 import java.io.IOException;
-import java.util.StringTokenizer;
+
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.examples.CSVInputFormat;
+import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
@@ -14,33 +14,39 @@ import org.apache.hadoop.util.GenericOptionsParser;
 
 public class candle {
 
-    public static class TokenizerMapper
-            extends Mapper<IntWritable, Text, Text, Text>{
+    public static class TokenizerMapper extends Mapper<Object, Text, Text, Text>{
 
         private  Text endkey  = new Text();
         private Text endval  = new Text();
 
-        public void map(IntWritable key, Text record, Context context) throws IOException, InterruptedException {
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
          //   StringTokenizer itr = new StringTokenizer(value.toString());
             Configuration conf = context.getConfiguration();
-
-            if(key.equals(0)){
-                return;
+            // separated with CSVHeaderFormat package
+            // SYNBOL MOMENT PRICE ID
+            String[] record_split = value.toString().split(",");
+            String SYMBOL = record_split[0];
+            String MOMENT = record_split[1];
+            String PRICE = record_split[2];
+            String ID = record_split[3];
+            String sec_ptrn = conf.get("candle.securities");
+            if(sec_ptrn != null ){
+                if(sec_ptrn.startsWith("\"")){
+                    sec_ptrn = sec_ptrn.substring(1, sec_ptrn.length());
+                }
+                if(sec_ptrn.endsWith("\"")){
+                    sec_ptrn = sec_ptrn.substring(0, sec_ptrn.length()-1);
+                }
             }
 
-            String[] tokens = record.toString().split(",");
-            try
-            {
-                int action = Integer.parseInt(actionStr);
-                int campaign = Integer.parseInt(campaignStr);
-
-                IntWritable mapOutKey = new IntWritable(campaign);
-                IntWritable mapOutValue = new IntWritable(action);
-                context.write(mapOutKey, mapOutValue);
-            } catch (Exception e)
-            {
-                System.out.println("*** exception:");
-                e.printStackTrace();
+            if(!SYMBOL.matches(sec_ptrn)){
+                return;
+            }
+            String cur_time = MOMENT.substring(8,12);
+            String time_from = conf.get("candle.time.from");
+            String time_to = conf.get("candle.time.to");
+            if (cur_time.compareTo(time_to) < 0 || cur_time.compareTo(time_from) > 0){
+                return;
             }
 
         }
@@ -85,7 +91,7 @@ public class candle {
         // job.setCombinerClass(IntSumReducer.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
-        job.setInputFormatClass(CSVInputFormat.class);
+        job.setInputFormatClass(CSVHeaderFormat.class);
 
         FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
         FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
