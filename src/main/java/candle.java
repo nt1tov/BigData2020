@@ -1,10 +1,8 @@
 import java.io.IOException;
-
 import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -12,16 +10,10 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
-import java.text.SimpleDateFormat;
 import org.apache.commons.logging.LogFactory;
 
-
-import java.text.ParseException;
-import java.util.Date;
 public class candle {
-
     public static class TokenizerMapper extends Mapper<Object, Text, Text, Text>{
-        private final SimpleDateFormat date_ptrn = new SimpleDateFormat("yyyyMMddHHmmss");
         private  Text endkey  = new Text();
         private Text endval  = new Text();
         public static final Log log = LogFactory.getLog(TokenizerMapper.class); // поле класса
@@ -65,14 +57,9 @@ public class candle {
             if (cur_date.compareTo(date_to) > 0 || cur_date.compareTo(date_from) < 0){
                 return;
             }
-            //width == 4
-            // cur_time == 1
-            // output moment = 0
-            // out_mom = cur_time / width  - cur_time  ;
 
             long width = Long.parseLong(conf.get("candle.width"));
 
-            //HHmmssFFF
             String cur_time_full = MOMENT.substring(8);
 
             long hrs = Long.parseLong(cur_time_full.substring(0, 2));
@@ -99,7 +86,6 @@ public class candle {
 
     public static class IntSumReducer extends Reducer<Text, Text, Text, Text> {
         public static final Log log = LogFactory.getLog(IntSumReducer.class); // поле класса
-
         private Text res_key = new Text();
         private Text res_values = new Text();
 
@@ -123,7 +109,6 @@ public class candle {
                 if(OPEN == -1.0 || OPEN > val_moment || (OPEN == val_moment && val_id < id_open)) {
                     id_open = val_id;
                     OPEN = val_price;
-
                 }
 
                 if(CLOSE == -1.0 || (CLOSE <= val_moment  || (CLOSE == val_moment && val_id > id_close)) ){
