@@ -1,0 +1,30 @@
+<configuration>
+    <property>
+        <name>candle.width</name>
+        <value>300000</value>
+    </property>
+    <property>
+        <name>candle.securities</name>
+        <value>".*"</value>
+    </property>
+    <property>
+        <name>candle.date.from</name>
+        <value>19000101</value>
+    </property>
+    <property>
+        <name>candle.date.to</name>
+        <value>20200101</value>
+    </property>
+    <property>
+        <name>candle.time.from</name>
+        <value>1000</value>
+    </property>
+    <property>
+        <name>candle.time.to</name>
+        <value>1800</value>
+    </property>
+    <property>
+        <name>candle.num.reducers</name>
+        <value>1</value>
+    </property>
+</configuration>
