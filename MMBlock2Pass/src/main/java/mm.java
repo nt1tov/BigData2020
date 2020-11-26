@@ -4,8 +4,7 @@ import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -14,22 +13,18 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.commons.logging.LogFactory;
 
-import org.apache.hadoop.io.WritableComparable;
-import org.apache.hadoop.io.DoubleWritable;
-import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.ObjectWritable;
-import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.io.NullWritable;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import java.io.IOException;
-
-
-
+import java.util.Locale;
 
 
 public class mm {
@@ -95,6 +90,59 @@ public class mm {
 
     }
 
+    public static class MatrixIndexes implements WritableComparable<MatrixIndexes>{
+
+        private LongWritable row;
+        private LongWritable col;
+        public MatrixIndexes(){
+            row = new LongWritable(-1);
+            col = new LongWritable(-1);
+        }
+
+        public MatrixIndexes(long rowIdx, long colIdx){
+            row = new LongWritable(rowIdx);
+            col = new LongWritable(colIdx);
+        }
+
+        public long getRow(){
+            return row.get();
+        }
+
+        public long getCol(){
+            return col.get();
+        }
+
+        @Override
+        public String toString(){
+            return String.format("%d %d", row.get(), col.get());
+        }
+
+        @Override
+        public int compareTo(MatrixIndexes other){
+            int comparedRows = row.compareTo(other.row);
+            int comparedCols = col.compareTo(other.col);
+            if(comparedRows == 0){
+                return comparedCols;
+            }
+            else{
+                return  comparedRows;
+            }
+        }
+
+        @Override
+        public void write(DataOutput dataOutput) throws IOException {
+            row.write(dataOutput);
+            col.write(dataOutput);
+        }
+
+        @Override
+        public void readFields(DataInput dataInput) throws IOException{
+            row.readFields(dataInput);
+            col.readFields(dataInput);
+        }
+
+    }
+
     public static class MatrixBlockValue implements Writable{
         private ObjectWritable matrixTag;
         private LongWritable colLocal;
@@ -125,7 +173,7 @@ public class mm {
             return rowLocal.get();
         }
 
-        public long getBlockCol(){
+        public long getColLocal(){
             return colLocal.get();
         }
 
@@ -171,10 +219,10 @@ public class mm {
             }
 
             String[] input_record = value.toString().split("\t");
-//            log.info(input_record[0]);
-//            log.info(input_record[1]);
-//            log.info(input_record[2]);
-//            log.info(input_record[3]);
+            log.info(input_record[0]);
+            log.info(input_record[1]);
+            log.info(input_record[2]);
+            log.info(input_record[3]);
 
             String MatrixTag = input_record[0];
             long col =  Long.parseLong(input_record[1]);
@@ -211,22 +259,104 @@ public class mm {
                 throw new InterruptedException();
             }
 
-
         }
     }
 
 
 
-    public static class MultBlockReducer extends Reducer<Text, Text, Text, Text> {
+    public static class MultBlockReducer extends Reducer<MatrixBlockKey, MatrixBlockValue, MatrixIndexes, DoubleWritable> {
+        public static final Log log = LogFactory.getLog(MultBlockReducer.class);
+        public static final double epsilon = Math.pow(10, -9);
+
+        @Override
+        public void reduce(MatrixBlockKey key, Iterable<MatrixBlockValue>  values, Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            long rowShift = key.getBlockRow();
+            long colShift = key.getGroupIdx();
+
+            String LeftMatrixTag = conf.get("mm.tags").substring(0, 1);
+            String RightMatrixTag = conf.get("mm.tags").substring(1, 2);
+
+            double[][] leftBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
+            double[][] rightBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
+
+            // fill block arrs from values
+            for (MatrixBlockValue value : values) {
+                int i = (int) value.getRowLocal();
+                int j = (int) value.getColLocal();
+                if (value.getMatrixTag().toString().equals(LeftMatrixTag)) {
+                    leftBlock[i][j] = value.getValue();
+                }
+                else if(value.getMatrixTag().toString().equals(RightMatrixTag)) {
+                    rightBlock[i][j] = value.getValue();
+                }
+                else{
+                    throw new IOException();
+                }
+            }
+
+            //multiply Left x Right block; write resulrs to context
+
+            for (int i = 0; i < BLOCK_SIZE; ++i) {
+                for (int j = 0; j < BLOCK_SIZE; ++j) {
+                    double outputElemPart = 0.0;
+                    for (int k = 0; k < BLOCK_SIZE; ++k) {
+                        outputElemPart += leftBlock[i][k] * rightBlock[k][j];
+                    }
+                    if(Math.abs(outputElemPart) < epsilon){
+                        continue;
+                    }
+                    context.write(new MatrixIndexes(rowShift + i, colShift + j), new DoubleWritable(outputElemPart));
+                }
+            }
+        }
+
+    }
+
+    public static class IdentityMapper extends Mapper<Object, Text,  MatrixIndexes, DoubleWritable> {
+
+        public static final Log log = LogFactory.getLog(MultBlockMapper.class);
+
+        @Override
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+
+            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            long M_SIZE = conf.getLong("m_size", -1);
+            long N_SIZE = conf.getLong("n_size", -1);
+            long P_SIZE = conf.getLong("p_size", -1);
+
+            String[] splittedValues = value.toString().split("\\s+");
+            log.info("Identuty Mapper: " + value.toString());
+            long row = Long.parseLong(splittedValues[0]);
+            long col = Long.parseLong(splittedValues[1]);
+
+            double valueofMatrix = Double.parseDouble(splittedValues[2]);
+            context.write(new MatrixIndexes(row, col), new DoubleWritable(valueofMatrix));
+        }
+    }
+
+    public static class SumReducer extends Reducer<MatrixIndexes, Iterable<DoubleWritable>, NullWritable, Text> {
         public static final Log log = LogFactory.getLog(MultBlockReducer.class);
 
         @Override
-        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-            Configuration conf = context.getConfiguration();
-            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+        public void reduce(MatrixIndexes key, Iterable<DoubleWritable>  values, Context context) throws IOException, InterruptedException {
 
+            double outputValueFull = 0;
+            for (DoubleWritable value : values) {
+                outputValueFull += value.get();
+            }
+            Configuration conf = context.getConfiguration();
+            String valueFormat = conf.get("mm.float-format", "%.3f");
+            String OutputTag = conf.get("mm.tags").substring(2, 3);
+            log.info("OUTPUTTAG=" + OutputTag);
+            String valueFormatted = String.format(Locale.ENGLISH, valueFormat, outputValueFull);
+            String outputStr =  OutputTag + "\t" +  key.getRow()  + "\t" +  key.getCol()  + "\t" + valueFormatted;
+            context.write(NullWritable.get(), new Text(outputStr));
 
         }
+
     }
 
     //public static class IdentityMapper extends Mapper
@@ -299,37 +429,41 @@ public class mm {
         multBlocks.setOutputFormatClass(TextOutputFormat.class);
 
         multBlocks.setMapperClass(MultBlockMapper.class);
-        //multBlocks.setReducerClass(MultBlockReducer.class);
+        multBlocks.setReducerClass(MultBlockReducer.class);
 
-        multBlocks.setOutputKeyClass(MatrixBlockKey.class);
-        multBlocks.setOutputValueClass(MatrixBlockValue.class);
+        multBlocks.setMapOutputKeyClass(MatrixBlockKey.class);
+        multBlocks.setMapOutputValueClass(MatrixBlockValue.class);
 
+        multBlocks.setOutputKeyClass(Text.class);
+        multBlocks.setOutputValueClass(Text.class);
 
 
         String pathLeft = otherArgs[0]+ "/data";
         String pathRight = otherArgs[1]+ "/data";
         FileInputFormat.addInputPaths(multBlocks, pathLeft + "," + pathRight);
-      //  FileInputFormat.addInputPath(multBlocks, new Path(otherArgs[1]+ "/data"));
         FileOutputFormat.setOutputPath(multBlocks, new Path("tmp"));
 
+        Job sumBlocks = new Job(conf, "sumBlocks");
+        sumBlocks.setJarByClass(mm.class);
+
+        sumBlocks.setMapperClass(IdentityMapper.class);
+        sumBlocks.setReducerClass(SumReducer.class);
+
+        sumBlocks.setMapOutputKeyClass(MatrixIndexes.class);
+        sumBlocks.setMapOutputValueClass(DoubleWritable.class);
+
+        sumBlocks.setInputFormatClass(TextInputFormat.class);
+        sumBlocks.setOutputFormatClass(TextOutputFormat.class);
+
+        sumBlocks.setOutputKeyClass(NullWritable.class);
+        sumBlocks.setOutputValueClass(Text.class);
+
+        FileInputFormat.addInputPath(sumBlocks, new Path("tmp"));
+        FileOutputFormat.setOutputPath(sumBlocks, new Path(otherArgs[2] + "/data"));
 
 
-//        Job sumBlocks = new Job(conf, "secondStep");
-//        sumBlocks.setJarByClass(mm.class);
-//
-////        sumJob.setMapperClass(SumMapper.class);
-////        sumJob.setReducerClass(SumReducer.class);
-//
-//        sumBlocks.setInputFormatClass(TextInputFormat.class);
-//        sumBlocks.setOutputFormatClass(TextOutputFormat.class);
-//
-//        sumBlocks.setOutputKeyClass(MatrixCoords.class);
-//        sumBlocks.setOutputValueClass(DoubleWritable.class);
-//
-//        FileInputFormat.addInputPath(sumBlocks, new Path("tmp"));
-//        FileOutputFormat.setOutputPath(sumBlocks, new Path(otherArgs[2] + "/data"));
 
         System.exit(multBlocks.waitForCompletion(true)
-                /*&& sumBlocks.waitForCompletion(true) */ ? 0 : 1);
+                && sumBlocks.waitForCompletion(true)  ? 0 : 1);
     }
 }
