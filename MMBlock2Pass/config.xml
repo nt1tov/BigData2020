@@ -1,11 +1,11 @@
 <configuration>
     <property>
         <name>mm.groups</name>
-        <value>4</value>
+        <value>3</value>
     </property>
     <property>
         <name>mm.tags</name>
-        <value>"ABC"</value>
+        <value>ABC</value>
     </property>
     <property>
         <name>mm.float-format</name>
@@ -13,6 +13,6 @@
     </property>
     <property>
         <name>mm.reduce.tasks</name>
-        <value>4</value>
+        <value>1</value>
     </property>
 </configuration>

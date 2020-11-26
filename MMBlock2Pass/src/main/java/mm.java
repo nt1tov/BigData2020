@@ -212,14 +212,14 @@ public class mm {
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
 
-            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            int  BLOCK_SIZE = conf.getInt("block_size", -1);
             long M_SIZE = conf.getLong("m_size", -1);
             long N_SIZE = conf.getLong("n_size", -1);
             long P_SIZE = conf.getLong("p_size", -1);
 
             log.info("block_size=" + BLOCK_SIZE + " M_SIZE" + M_SIZE + " N_SIZE=" + N_SIZE + " P_size=" + P_SIZE);
 
-            if( M_SIZE == -1 || N_SIZE == -1 || P_SIZE == -1){
+            if( M_SIZE == -1 || N_SIZE == -1 || P_SIZE == -1 || BLOCK_SIZE == -1){
                 throw new IOException();
             }
 
@@ -272,7 +272,7 @@ public class mm {
         @Override
         public void reduce(MatrixBlockKey key, Iterable<MatrixBlockValue>  values, Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
-            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            int  BLOCK_SIZE = conf.getInt("block_size", -1);
             long rowShift = key.getBlockRow();
             long colShift = key.getGroupIdx();
 
@@ -324,10 +324,11 @@ public class mm {
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
 
-            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            int  BLOCK_SIZE = conf.getInt("block_size", -1);
             long M_SIZE = conf.getLong("m_size", -1);
             long N_SIZE = conf.getLong("n_size", -1);
             long P_SIZE = conf.getLong("p_size", -1);
+
 
             String[] splittedValues = value.toString().split("\\s+");
             log.info("Identuty Mapper: " + value.toString());
@@ -335,6 +336,7 @@ public class mm {
             long col = Long.parseLong(splittedValues[1]);
 
             double valueofMatrix = Double.parseDouble(splittedValues[2]);
+            log.info("row=" + row + " col=" + col + " Val=" + valueofMatrix);
             context.write(new MatrixIndexes(row, col), new DoubleWritable(valueofMatrix));
         }
     }
@@ -392,21 +394,24 @@ public class mm {
         conf.setIfUnset("mm.tags", "ABC");
         conf.setIfUnset("mm.float-format", "%.3f");
         conf.setIfUnset("mapred.reduce.tasks", "1");
-        conf.setIfUnset("mm.groups", "1");
+        conf.setIfUnset("mm.groups", "2");
         String tags = conf.get("mm.tags");
+        log.info("mm.tags="+ conf.get("mm.tags"));
+        log.info("mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
+        log.info("mm.groups="+ conf.get("mm.groups"));
 
         assert (tags.length() == 3);
-        long m = -1L, n = -1L, p = -1L, o = -1L, n1 = -1L;
+        long m = -1L, n = -1L, p = -1L, n1 = -1L;
 
 
         fs =FileSystem.get(conf);
-        BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
+        BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[1] + "/size"))));
         String[] size_str = bufReader.readLine().split("\t");
         m = Long.parseLong(size_str[0]);
         n = Long.parseLong(size_str[1]);
         bufReader.close();
 
-        bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
+        bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[1] + "/size"))));
         size_str = bufReader.readLine().split("\t");
         n1 = Long.parseLong(size_str[0]);
         p = Long.parseLong(size_str[1]);
@@ -419,6 +424,10 @@ public class mm {
         conf.set("m_size", Long.toString(m));
         conf.set("n_size", Long.toString(n));
         conf.set("p_size", Long.toString(p));
+
+        long GROUPS = conf.getLong("mm.groups", 1);
+        long BLOCK_SIZE = Math.min(Math.min(m / GROUPS, n / GROUPS), p / GROUPS);
+        conf.set("block_size", Long.toString(BLOCK_SIZE));
 
         Job multBlocks = new Job(conf, "multBlocks");
         multBlocks.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
@@ -443,6 +452,7 @@ public class mm {
         FileOutputFormat.setOutputPath(multBlocks, tmp_path);
 
         Job sumBlocks = new Job(conf, "sumBlocks");
+        //sumBlocks.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
         sumBlocks.setJarByClass(mm.class);
 
         sumBlocks.setMapperClass(IdentityMapper.class);
