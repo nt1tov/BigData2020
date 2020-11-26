@@ -1,7 +1,7 @@
 <configuration>
     <property>
         <name>mm.groups</name>
-        <tag>REQUIRED</tag>
+        <value>1</value>
     </property>
     <property>
         <name>mm.tags</name>
