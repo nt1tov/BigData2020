@@ -23,6 +23,9 @@ import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import java.io.IOException;
 import java.util.Locale;
 
@@ -39,10 +42,10 @@ public class mm {
             groupIdx = new LongWritable(0);
         }
 
-        public MatrixBlockKey(long Row, long Column, long dup){
+        public MatrixBlockKey(long Row, long Column, long group){
             rowBlock = new LongWritable(Row);
             colBlock = new LongWritable(Column);
-            groupIdx = new LongWritable(dup);
+            groupIdx = new LongWritable(group);
         }
 
         public long getBlockRow(){
@@ -61,15 +64,17 @@ public class mm {
         public int compareTo(MatrixBlockKey other) {
             int compareRow = rowBlock.compareTo(other.rowBlock);
             int compareCol = colBlock.compareTo(other.colBlock);
-            int compareGroupIdx= colBlock.compareTo(other.groupIdx);
+            int compareGroupIdx= groupIdx.compareTo(other.groupIdx);
 
             if (compareRow == 0) {
                 if (compareCol == 0) {
                     return compareGroupIdx;
-                } else {
+                }
+                else {
                     return compareCol;
                 }
-            } else {
+            }
+            else {
                 return compareRow;
             }
         }
@@ -225,22 +230,18 @@ public class mm {
             log.info(input_record[3]);
 
             String MatrixTag = input_record[0];
-            long col =  Long.parseLong(input_record[1]);
-            long row =  Long.parseLong(input_record[2]);
+            long row =  Long.parseLong(input_record[1]);
+            long col =  Long.parseLong(input_record[2]);
             double val = Double.parseDouble(input_record[3]);
-
 
             String LeftMatrixTag = conf.get("mm.tags").substring(0, 1);
             String RightMatrixTag = conf.get("mm.tags").substring(1, 2);;
-//            log.info(LeftMatrixTag);
-//            log.info(RightMatrixTag);
-            MatrixBlockKey outKey;
-            MatrixBlockValue outVal;
 
             if(MatrixTag.equals(LeftMatrixTag)){
                 long blockColumns = P_SIZE / BLOCK_SIZE;
                 log.info("blockColumns="+ blockColumns);
                 for (int i = 0; i < blockColumns; ++i){
+                    //log.info(row / BLOCK_SIZE + " " + col / BLOCK_SIZE+ " " + i);
                     context.write(new MatrixBlockKey(row / BLOCK_SIZE, col / BLOCK_SIZE, i),
                                 new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
                                                     col % BLOCK_SIZE, val));
@@ -266,7 +267,7 @@ public class mm {
 
     public static class MultBlockReducer extends Reducer<MatrixBlockKey, MatrixBlockValue, MatrixIndexes, DoubleWritable> {
         public static final Log log = LogFactory.getLog(MultBlockReducer.class);
-        public static final double epsilon = Math.pow(10, -9);
+
 
         @Override
         public void reduce(MatrixBlockKey key, Iterable<MatrixBlockValue>  values, Context context) throws IOException, InterruptedException {
@@ -281,8 +282,10 @@ public class mm {
             double[][] leftBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
             double[][] rightBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
 
+          //  log.info("key=" + key.g);
             // fill block arrs from values
             for (MatrixBlockValue value : values) {
+                //log.info("value="+value);
                 int i = (int) value.getRowLocal();
                 int j = (int) value.getColLocal();
                 if (value.getMatrixTag().toString().equals(LeftMatrixTag)) {
@@ -304,10 +307,9 @@ public class mm {
                     for (int k = 0; k < BLOCK_SIZE; ++k) {
                         outputElemPart += leftBlock[i][k] * rightBlock[k][j];
                     }
-                    if(Math.abs(outputElemPart) < epsilon){
-                        continue;
-                    }
-                    context.write(new MatrixIndexes(rowShift + i, colShift + j), new DoubleWritable(outputElemPart));
+
+                    context.write(new MatrixIndexes(rowShift*BLOCK_SIZE + i,
+                            colShift*BLOCK_SIZE + j), new DoubleWritable(outputElemPart));
                 }
             }
         }
@@ -337,8 +339,10 @@ public class mm {
         }
     }
 
-    public static class SumReducer extends Reducer<MatrixIndexes, Iterable<DoubleWritable>, NullWritable, Text> {
+    public static class SumReducer extends Reducer<MatrixIndexes, DoubleWritable, NullWritable, Text> {
         public static final Log log = LogFactory.getLog(MultBlockReducer.class);
+        public static final double epsilon = Math.pow(10, -9);
+
 
         @Override
         public void reduce(MatrixIndexes key, Iterable<DoubleWritable>  values, Context context) throws IOException, InterruptedException {
@@ -353,8 +357,9 @@ public class mm {
             log.info("OUTPUTTAG=" + OutputTag);
             String valueFormatted = String.format(Locale.ENGLISH, valueFormat, outputValueFull);
             String outputStr =  OutputTag + "\t" +  key.getRow()  + "\t" +  key.getCol()  + "\t" + valueFormatted;
-            context.write(NullWritable.get(), new Text(outputStr));
-
+            if(Math.abs(outputValueFull - 0.0) > epsilon){
+                context.write(NullWritable.get(), new Text(outputStr));
+            }
         }
 
     }
@@ -383,35 +388,48 @@ public class mm {
         //parse matrix A size
         BufferedReader reader;
         long m = -1L, n = -1L, p = -1L, o = -1L, n1 = -1L;
-        try {
-            reader = new BufferedReader(new FileReader(otherArgs[0] + "/size"));
-            String input_line = reader.readLine();
-            String[] size_str = input_line.split("\t");
-            log.info(input_line);
-            m = Long.parseLong(size_str[0]);
-            n = Long.parseLong(size_str[1]);
-            log.info(size_str);
-            reader.close();
-        } catch (IOException e) {
-            System.out.println("exception Left");
-            e.printStackTrace();
-            System.exit(1);
-        }
-        //parse matrix B size
-        try {
-            reader = new BufferedReader(new FileReader(otherArgs[1] + "/size"));
-            String input_line = reader.readLine();
-            String[] size_str = input_line.split("\t");
-            log.info(input_line);
-            n1 =  Long.parseLong(size_str[0]);
-            p =  Long.parseLong(size_str[1]);
-            log.info(size_str);
-            reader.close();
-        } catch (IOException e) {
-            System.out.println("exception right");
-            e.printStackTrace();
-            System.exit(1);
-        }
+//        try {
+//            reader = new BufferedReader(new FileReader(otherArgs[0] + "/size"));
+//            String input_line = reader.readLine();
+//            String[] size_str = input_line.split("\t");
+//            log.info(input_line);
+//            m = Long.parseLong(size_str[0]);
+//            n = Long.parseLong(size_str[1]);
+//            log.info(size_str);
+//            reader.close();
+//        } catch (IOException e) {
+//            System.out.println("exception Left");
+//            e.printStackTrace();
+//            System.exit(1);
+//        }
+//        //parse matrix B size
+//        try {
+//            reader = new BufferedReader(new FileReader(otherArgs[1] + "/size"));
+//            String input_line = reader.readLine();
+//            String[] size_str = input_line.split("\t");
+//            log.info(input_line);
+//            n1 =  Long.parseLong(size_str[0]);
+//            p =  Long.parseLong(size_str[1]);
+//            log.info(size_str);
+//            reader.close();
+//        } catch (IOException e) {
+//            System.out.println("exception right");
+//            e.printStackTrace();
+//            System.exit(1);
+//        }
+
+        FileSystem fs =FileSystem.get(conf);
+        BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
+        String[] size_str = bufReader.readLine().split("\t");
+        m = Long.parseLong(size_str[0]);
+        n = Long.parseLong(size_str[1]);
+        bufReader.close();
+
+        bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
+        size_str = bufReader.readLine().split("\t");
+        n1 = Long.parseLong(size_str[0]);
+        p = Long.parseLong(size_str[1]);
+        bufReader.close();
 
         //check matrixes's sizes
         assert (n == n1);
@@ -452,16 +470,16 @@ public class mm {
         sumBlocks.setMapOutputKeyClass(MatrixIndexes.class);
         sumBlocks.setMapOutputValueClass(DoubleWritable.class);
 
-        sumBlocks.setInputFormatClass(TextInputFormat.class);
-        sumBlocks.setOutputFormatClass(TextOutputFormat.class);
-
         sumBlocks.setOutputKeyClass(NullWritable.class);
         sumBlocks.setOutputValueClass(Text.class);
 
         FileInputFormat.addInputPath(sumBlocks, new Path("tmp"));
         FileOutputFormat.setOutputPath(sumBlocks, new Path(otherArgs[2] + "/data"));
 
-
+        fs = FileSystem.get(conf);
+        FSDataOutputStream os = fs.create(new Path(otherArgs[2] + "/size"));
+        os.writeBytes(m + "\t" + p);
+        os.close();
 
         System.exit(multBlocks.waitForCompletion(true)
                 && sumBlocks.waitForCompletion(true)  ? 0 : 1);
