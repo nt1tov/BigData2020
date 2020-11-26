@@ -2,7 +2,6 @@ import java.io.*;
 
 import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
-import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
@@ -23,7 +22,8 @@ import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.*;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import java.io.IOException;
@@ -369,8 +369,20 @@ public class mm {
 
 
     public static void main(String[] args) throws Exception {
+
         final Log log = LogFactory.getLog(mm.class);
         Configuration conf = new Configuration();
+        FileSystem fs =FileSystem.get(conf);
+        Path tmp_path = new Path("/tmp/mmtmp");
+        fs = FileSystem.get(conf);
+
+        if (fs.exists(tmp_path)) {
+            log.info("YES!");
+            fs.delete(tmp_path, true);
+        }
+
+        //conf.set("hadoop.tmp.dir","/tmp/mmtmp");
+        tmp_path = new Path("/tmp/mmtmp");
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 
         if (otherArgs.length != 3) {
@@ -384,41 +396,10 @@ public class mm {
         String tags = conf.get("mm.tags");
 
         assert (tags.length() == 3);
-
-        //parse matrix A size
-        BufferedReader reader;
         long m = -1L, n = -1L, p = -1L, o = -1L, n1 = -1L;
-//        try {
-//            reader = new BufferedReader(new FileReader(otherArgs[0] + "/size"));
-//            String input_line = reader.readLine();
-//            String[] size_str = input_line.split("\t");
-//            log.info(input_line);
-//            m = Long.parseLong(size_str[0]);
-//            n = Long.parseLong(size_str[1]);
-//            log.info(size_str);
-//            reader.close();
-//        } catch (IOException e) {
-//            System.out.println("exception Left");
-//            e.printStackTrace();
-//            System.exit(1);
-//        }
-//        //parse matrix B size
-//        try {
-//            reader = new BufferedReader(new FileReader(otherArgs[1] + "/size"));
-//            String input_line = reader.readLine();
-//            String[] size_str = input_line.split("\t");
-//            log.info(input_line);
-//            n1 =  Long.parseLong(size_str[0]);
-//            p =  Long.parseLong(size_str[1]);
-//            log.info(size_str);
-//            reader.close();
-//        } catch (IOException e) {
-//            System.out.println("exception right");
-//            e.printStackTrace();
-//            System.exit(1);
-//        }
 
-        FileSystem fs =FileSystem.get(conf);
+
+        fs =FileSystem.get(conf);
         BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
         String[] size_str = bufReader.readLine().split("\t");
         m = Long.parseLong(size_str[0]);
@@ -459,7 +440,7 @@ public class mm {
         String pathLeft = otherArgs[0]+ "/data";
         String pathRight = otherArgs[1]+ "/data";
         FileInputFormat.addInputPaths(multBlocks, pathLeft + "," + pathRight);
-        FileOutputFormat.setOutputPath(multBlocks, new Path("tmp"));
+        FileOutputFormat.setOutputPath(multBlocks, tmp_path);
 
         Job sumBlocks = new Job(conf, "sumBlocks");
         sumBlocks.setJarByClass(mm.class);
@@ -473,13 +454,15 @@ public class mm {
         sumBlocks.setOutputKeyClass(NullWritable.class);
         sumBlocks.setOutputValueClass(Text.class);
 
-        FileInputFormat.addInputPath(sumBlocks, new Path("tmp"));
+        FileInputFormat.addInputPath(sumBlocks, tmp_path);
         FileOutputFormat.setOutputPath(sumBlocks, new Path(otherArgs[2] + "/data"));
 
         fs = FileSystem.get(conf);
         FSDataOutputStream os = fs.create(new Path(otherArgs[2] + "/size"));
         os.writeBytes(m + "\t" + p);
         os.close();
+
+
 
         System.exit(multBlocks.waitForCompletion(true)
                 && sumBlocks.waitForCompletion(true)  ? 0 : 1);

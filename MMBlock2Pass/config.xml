@@ -1,7 +1,7 @@
 <configuration>
     <property>
         <name>mm.groups</name>
-        <value>1</value>
+        <value>4</value>
     </property>
     <property>
         <name>mm.tags</name>
@@ -13,6 +13,6 @@
     </property>
     <property>
         <name>mm.reduce.tasks</name>
-        <value>1</value>
+        <value>4</value>
     </property>
 </configuration>
