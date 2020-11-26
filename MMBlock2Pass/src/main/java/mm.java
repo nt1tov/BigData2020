@@ -1,8 +1,10 @@
-import java.io.IOException;
+import java.io.*;
+
 import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -12,145 +14,257 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.commons.logging.LogFactory;
 
-public class mm {
-    public static class TokenizerMapper extends Mapper<Object, Text, Text, Text>{
-        private  Text endkey  = new Text();
-        private Text endval  = new Text();
-        public static final Log log = LogFactory.getLog(TokenizerMapper.class); // поле класса
-        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-         //   StringTokenizer itr = new StringTokenizer(value.toString());
-            Configuration conf = context.getConfiguration();
-            // separated with CSVHeaderFormat package
-            // SYMBOL MOMENT PRICE ID
-            String[] record_split = value.toString().split(",");
-            String SYMBOL = record_split[0];
-            String MOMENT = record_split[1];
-            String PRICE = record_split[2];
-            String ID = record_split[3];
-          //  log.info(value.toString());
-            String sec_ptrn = conf.get("candle.securities");
-            assert sec_ptrn != null;
-            // cut
-            if(sec_ptrn.startsWith("\"")){
-                sec_ptrn = sec_ptrn.substring(1, sec_ptrn.length());
+import org.apache.hadoop.io.WritableComparable;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.ObjectWritable;
+import org.apache.hadoop.io.Writable;
+import java.io.DataInput;
+import java.io.DataOutput;
+
+import java.io.IOException;
+
+
+class MatrixBlockKey implements WritableComparable<MatrixBlockKey>{
+    private LongWritable rowBlock;
+    private LongWritable colBlock;
+    private LongWritable dupNumber;
+
+    public MatrixBlockKey(){
+        rowBlock = new LongWritable(0);
+        colBlock = new LongWritable(0);
+        dupNumber = new LongWritable(0);
+    }
+
+    public MatrixBlockKey(long Row, long Column, long dup){
+        rowBlock = new LongWritable(Row);
+        colBlock = new LongWritable(Column);
+        dupNumber = new LongWritable(dup);
+    }
+
+    public long getBlockRow(){
+        return rowBlock.get();
+    }
+
+    public long getBlockCol(){
+        return colBlock.get();
+    }
+
+    public long getDupNumber(){
+        return dupNumber.get();
+    }
+
+    @Override
+    public int compareTo(MatrixBlockKey other) {
+        int compareRow = rowBlock.compareTo(other.rowBlock);
+        int compareCol = colBlock.compareTo(other.colBlock);
+        int compareDupNumber = colBlock.compareTo(other.dupNumber);
+
+        if (compareRow == 0) {
+            if (compareCol == 0) {
+                return compareDupNumber;
+            } else {
+                return compareCol;
             }
-            if(sec_ptrn.endsWith("\"")){
-                sec_ptrn = sec_ptrn.substring(0, sec_ptrn.length()-1);
-            }
-
-            if(!SYMBOL.matches(sec_ptrn)){
-                return;
-            }
-            // HHmmss
-            String cur_time_sec = MOMENT.substring(8,12); //hh:mm::ss HHmmss
-            String time_from = conf.get("candle.time.from");
-            String time_to = conf.get("candle.time.to");
-
-
-            if (cur_time_sec.compareTo(time_to) > 0 || cur_time_sec.compareTo(time_from) < 0){
-                return;
-            }
-
-            String cur_date = MOMENT.substring(0, 7);
-            String date_from = conf.get("candle.date.from");
-            String date_to = conf.get("candle.date.to");
-            if (cur_date.compareTo(date_to) > 0 || cur_date.compareTo(date_from) < 0){
-                return;
-            }
-
-            long width = Long.parseLong(conf.get("candle.width"));
-
-            String cur_time_full = MOMENT.substring(8);
-
-            long hrs = Long.parseLong(cur_time_full.substring(0, 2));
-            long mins = Long.parseLong(cur_time_full.substring(2, 4));
-            long sec = Long.parseLong(cur_time_full.substring(4, 6));
-            long ms =  Long.parseLong(cur_time_full.substring(6));
-
-            long time_ms = hrs*60*60*1000 + mins*60*1000 + sec*1000 + ms;
-
-            long out_time_ms = (time_ms / width) * width;
-            String CANDLE_MOMENT = cur_date + Long.toString(out_time_ms / (60 * 60 * 1000))
-                                    + Long.toString(out_time_ms / (60 * 1000))
-                                    + Long.toString(out_time_ms / (1000))
-                                    + Long.toString(out_time_ms % (1000));
-
-            endkey.set(SYMBOL + "," + CANDLE_MOMENT);
-            endval.set(MOMENT + "," + PRICE + "," + ID );
-            log.info(endkey.toString());
-            log.info(endval.toString());
-
-            context.write(endkey, endval);
+        } else {
+            return compareRow;
         }
     }
 
-    public static class IntSumReducer extends Reducer<Text, Text, Text, Text> {
-        public static final Log log = LogFactory.getLog(IntSumReducer.class); // поле класса
+    @Override
+    public void write(DataOutput DataOutput) throws IOException{
+        rowBlock.write(DataOutput);
+        colBlock.write(DataOutput);
+        dupNumber.write(DataOutput);
+    }
+
+    @Override
+    public void readFields(DataInput Datainput)  throws IOException{
+        rowBlock.readFields(Datainput);
+        colBlock.readFields(Datainput);
+        dupNumber.readFields(Datainput);
+    }
+
+}
+
+
+class MatrixBlockValue implements Writable{
+    private ObjectWritable matrixTag;
+    private LongWritable colLocal;
+    private LongWritable rowLocal;
+    private DoubleWritable value;
+
+
+    public MatrixBlockValue(){
+        colLocal = new LongWritable(0);
+        rowLocal = new LongWritable(0);
+        value = new DoubleWritable(0.0);
+        matrixTag = new ObjectWritable("");
+
+    }
+
+    public MatrixBlockValue(String tag, long row, long column, double val){
+        matrixTag = new ObjectWritable(tag);
+        rowLocal = new LongWritable(row);
+        colLocal = new LongWritable(column);
+        value = new DoubleWritable(val);
+    }
+
+    public Object getMatrixTag(){
+        return matrixTag.get();
+    }
+
+    public long getRowLocal(){
+        return rowLocal.get();
+    }
+
+    public long getBlockCol(){
+        return colLocal.get();
+    }
+
+    public double getValue(){
+        return value.get();
+    }
+
+    @Override
+    public void write(DataOutput DataOutput) throws IOException{
+        matrixTag.write(DataOutput);
+        rowLocal.write(DataOutput);
+        colLocal.write(DataOutput);
+        value.write(DataOutput);
+    }
+
+    @Override
+    public void readFields(DataInput Datainput)  throws IOException{
+        matrixTag.readFields(Datainput);
+        rowLocal.readFields(Datainput);
+        colLocal.readFields(Datainput);
+        value.readFields(Datainput);
+    }
+
+}
+
+
+public class mm {
+    public static class BlockMapper extends Mapper<Object, Text, MatrixBlockKey, MatrixBlockValue> {
+
+        public static final Log log = LogFactory.getLog(BlockMapper.class);
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+
+            int BLOCK_SIZE = conf.getInt("mm.groups", 1);
+            long M_SIZE = conf.getLong("m_size", -1);
+            long N_SIZE = conf.getLong("n_size", -1);
+            long P_SIZE = conf.getLong("p_size", -1);
+
+            assert (M_SIZE != -1 && N_SIZE != -1 && P_SIZE != -1);
+
+            long LeftBlockColSize = M_SIZE / BLOCK_SIZE;
+            long RightBlockRowSize = P_SIZE / BLOCK_SIZE;
+            String[] input_record = value.toString().split("\t");
+            String MatrixTag = input_record[0];
+            long col =  Long.parseLong(input_record[1]);
+            long row =  Long.parseLong(input_record[2]);
+            double val = Double.parseDouble(input_record[3]);
+
+            String LeftMatrixTag = conf.getStrings("mm.tags", "")[0];
+            String RightMatrixTag = conf.getStrings("mm.tags", "")[1];
+
+            MatrixBlockKey outKey;
+            MatrixBlockValue outVal;
+
+            if(MatrixTag.equals(LeftMatrixTag)){
+                long blockColumns = P_SIZE / BLOCK_SIZE;
+                for (int i = 0; i < blockColumns; ++i){
+                    context.write(new MatrixBlockKey(row / BLOCK_SIZE, col / BLOCK_SIZE, i),
+                                new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
+                                                    col % BLOCK_SIZE, val));
+                }
+            }
+            else if(MatrixTag.equals(RightMatrixTag)){
+                long blockRows = M_SIZE / BLOCK_SIZE;
+                for (int i = 0; i < blockRows; ++i){
+                    context.write(new MatrixBlockKey(i, row / BLOCK_SIZE, col / BLOCK_SIZE),
+                            new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
+                                    col % BLOCK_SIZE, val));
+                }
+            }
+            else{
+                throw new InterruptedException();
+            }
+
+
+        }
+    }
+
+    public static class BlockReducer extends Reducer<Text, Text, Text, Text> {
+        public static final Log log = LogFactory.getLog(BlockReducer.class); // поле класса
         private Text res_key = new Text();
         private Text res_values = new Text();
 
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
 
-            double LOW = -1.0, HIGH = -1.0, OPEN  = -1.0, CLOSE = -1.0;
-            int id_open  = -1;
-            int id_close = -1;
-            int idx = 0;
-            res_key = key;
-            log.info("****");
-            log.info(key.toString());
 
-            for(Object value: values){
-                log.info(value.toString());
-                String[] value_split = value.toString().split(",");
-                long val_moment =  Long.parseLong(value_split[0]);
-                double val_price = Double.parseDouble((value_split[1]));
-                int val_id = Integer.parseInt((value_split[2]));
-
-                if(OPEN == -1.0 || OPEN > val_moment || (OPEN == val_moment && val_id < id_open)) {
-                    id_open = val_id;
-                    OPEN = val_price;
-                }
-
-                if(CLOSE == -1.0 || (CLOSE <= val_moment  || (CLOSE == val_moment && val_id > id_close)) ){
-                    CLOSE = val_price;
-                    id_close = val_id;
-                }
-
-                if(LOW == -1.0 || LOW > val_price){
-                    LOW = val_price;
-                }
-
-                if(LOW == -1.0 || HIGH < val_price){
-                    HIGH  = val_price;
-                }
-            }
-            log.info("***");
-            res_values.set(Double.toString(OPEN) + "," +  Double.toString(HIGH) + Double.toString(LOW) + Double.toString(CLOSE));
             context.write(res_key, res_values);
         }
     }
 
+    //public static class IdentityMapper extends Mapper
+   // public static class BlockSumReducer
+
+
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
-        if (otherArgs.length != 2) {
-            System.err.println("Usage: candle <in> <out>");
+        if (otherArgs.length != 3) {
+            System.err.println("Usage: mm <A path> <B path> <C path>");
             System.exit(2);
         }
-        conf.setIfUnset("candle.width", "300000");
-        conf.setIfUnset("candle.securities", ".*");
-        conf.setIfUnset("candle.date.from", "19000101");
-        conf.setIfUnset("candle.date.to", "20200101");
-        conf.setIfUnset("candle.time.from", "1000");
-        conf.setIfUnset("candle.time.to", "2300");
-        conf.setIfUnset("candle.num.reducers", "1");
+        conf.setIfUnset("mm.tags", "ABC");
+        conf.setIfUnset("mm.float-format", "%.3f");
+        conf.setIfUnset("mm.reduce.tasks", "1");
+        String tags = conf.get("mm.tags");
 
+        assert (tags.length() == 3);
 
-        Job job = new Job(conf, "candle");
-       // job.setNumReduceTasks(conf.getInt("candle.num.reducers", 1));
-        job.setJarByClass(candle.class);
-        job.setMapperClass(TokenizerMapper.class);
-        job.setReducerClass(IntSumReducer.class);
+        //parse matrix A size
+        BufferedReader reader;
+        Long m = -1L, n = -1L, p = -1L, o = -1L;
+        try {
+            reader = new BufferedReader(new FileReader(otherArgs[0] + "/size"));
+            String[] size_str = reader.readLine().split("\t");
+            m = Long.parseLong(size_str[0]);
+            n = Long.parseLong(size_str[1]);
+            reader.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        //parse matrix B size
+        try {
+            reader = new BufferedReader(new FileReader(otherArgs[1] + "/size"));
+            String[] size_str = reader.readLine().split("\t");
+            p =  Long.parseLong(size_str[0]);
+            o =  Long.parseLong(size_str[1]);
+            reader.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        //check matrixes's sizes
+        assert (n.equals(p));
+        assert (n != -1 && m != -1 && o != -1);
+
+        conf.set("m_size", m.toString());
+        conf.set("n_size", n.toString());
+        conf.set("o_size", o.toString());
+
+        Job job = new Job(conf, "mm");
+        job.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
+        job.setJarByClass(mm.class);
+        job.setMapperClass(BlockMapper.class);
+        job.setReducerClass(BlockReducer.class);
 
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(Text.class);
@@ -158,10 +272,11 @@ public class mm {
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 
-        job.setInputFormatClass(CSVHeaderFormat.class);
+       // job.setInputFormatClass(CSVHeaderFormat.class);
 
-        FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
-        FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
+        FileInputFormat.addInputPath(job, new Path(otherArgs[0]+ "/data") );
+        FileInputFormat.addInputPath(job, new Path(otherArgs[1]+ "/data"));
+        FileOutputFormat.setOutputPath(job, new Path(otherArgs[2] + "/data"));
 
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }

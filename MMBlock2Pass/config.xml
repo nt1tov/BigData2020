@@ -1,7 +1,7 @@
 <configuration>
     <property>
         <name>mm.groups</name>
-        <value>1</value>
+        <tag>REQUIRED</tag>
     </property>
     <property>
         <name>mm.tags</name>
@@ -12,7 +12,7 @@
         <value>%.3f</value>
     </property>
     <property>
-        <name>mapred.reduce.tasks</name>
+        <name>mm.reduce.tasks</name>
         <value>1</value>
     </property>
 </configuration>
