@@ -12,7 +12,7 @@
         <value>%.3f</value>
     </property>
     <property>
-        <name>mm.reduce.tasks</name>
+        <name>mapred.reduce.tasks</name>
         <value>1</value>
     </property>
 </configuration>

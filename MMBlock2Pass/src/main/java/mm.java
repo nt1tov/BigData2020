@@ -17,13 +17,11 @@ import org.apache.hadoop.io.NullWritable;
 
 import java.io.DataInput;
 import java.io.DataOutput;
-import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.*;
+
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import java.io.IOException;
@@ -217,17 +215,17 @@ public class mm {
             long N_SIZE = conf.getLong("n_size", -1);
             long P_SIZE = conf.getLong("p_size", -1);
 
-            log.info("block_size=" + BLOCK_SIZE + " M_SIZE" + M_SIZE + " N_SIZE=" + N_SIZE + " P_size=" + P_SIZE);
+           // log.info("block_size=" + BLOCK_SIZE + " M_SIZE" + M_SIZE + " N_SIZE=" + N_SIZE + " P_size=" + P_SIZE);
 
             if( M_SIZE == -1 || N_SIZE == -1 || P_SIZE == -1 || BLOCK_SIZE == -1){
                 throw new IOException();
             }
 
             String[] input_record = value.toString().split("\t");
-            log.info(input_record[0]);
-            log.info(input_record[1]);
-            log.info(input_record[2]);
-            log.info(input_record[3]);
+//            log.info(input_record[0]);
+//            log.info(input_record[1]);
+//            log.info(input_record[2]);
+//            log.info(input_record[3]);
 
             String MatrixTag = input_record[0];
             long row =  Long.parseLong(input_record[1]);
@@ -235,11 +233,11 @@ public class mm {
             double val = Double.parseDouble(input_record[3]);
 
             String LeftMatrixTag = conf.get("mm.tags").substring(0, 1);
-            String RightMatrixTag = conf.get("mm.tags").substring(1, 2);;
+            String RightMatrixTag = conf.get("mm.tags").substring(1, 2);
 
             if(MatrixTag.equals(LeftMatrixTag)){
                 long blockColumns = P_SIZE / BLOCK_SIZE;
-                log.info("blockColumns="+ blockColumns);
+               // log.info("blockColumns="+ blockColumns);
                 for (int i = 0; i < blockColumns; ++i){
                     //log.info(row / BLOCK_SIZE + " " + col / BLOCK_SIZE+ " " + i);
                     context.write(new MatrixBlockKey(row / BLOCK_SIZE, col / BLOCK_SIZE, i),
@@ -249,7 +247,7 @@ public class mm {
             }
             else if(MatrixTag.equals(RightMatrixTag)){
                 long blockRows = M_SIZE / BLOCK_SIZE;
-                log.info("blockRows="+ blockRows);
+               // log.info("blockRows="+ blockRows);
                 for (int i = 0; i < blockRows; ++i){
                     context.write(new MatrixBlockKey(i, row / BLOCK_SIZE, col / BLOCK_SIZE),
                             new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
@@ -282,8 +280,6 @@ public class mm {
             double[][] leftBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
             double[][] rightBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
 
-          //  log.info("key=" + key.g);
-            // fill block arrs from values
             for (MatrixBlockValue value : values) {
                 //log.info("value="+value);
                 int i = (int) value.getRowLocal();
@@ -331,12 +327,12 @@ public class mm {
 
 
             String[] splittedValues = value.toString().split("\\s+");
-            log.info("Identuty Mapper: " + value.toString());
+           // log.info("Identity Mapper: " + value.toString());
             long row = Long.parseLong(splittedValues[0]);
             long col = Long.parseLong(splittedValues[1]);
 
             double valueofMatrix = Double.parseDouble(splittedValues[2]);
-            log.info("row=" + row + " col=" + col + " Val=" + valueofMatrix);
+         //   log.info("row=" + row + " col=" + col + " Val=" + valueofMatrix);
             context.write(new MatrixIndexes(row, col), new DoubleWritable(valueofMatrix));
         }
     }
@@ -349,14 +345,16 @@ public class mm {
         @Override
         public void reduce(MatrixIndexes key, Iterable<DoubleWritable>  values, Context context) throws IOException, InterruptedException {
 
+            Configuration conf = context.getConfiguration();
             double outputValueFull = 0;
             for (DoubleWritable value : values) {
                 outputValueFull += value.get();
             }
-            Configuration conf = context.getConfiguration();
+
+
             String valueFormat = conf.get("mm.float-format", "%.3f");
             String OutputTag = conf.get("mm.tags").substring(2, 3);
-            log.info("OUTPUTTAG=" + OutputTag);
+            //log.info("OUTPUTTAG=" + OutputTag);
             String valueFormatted = String.format(Locale.ENGLISH, valueFormat, outputValueFull);
             String outputStr =  OutputTag + "\t" +  key.getRow()  + "\t" +  key.getCol()  + "\t" + valueFormatted;
             if(Math.abs(outputValueFull - 0.0) > epsilon){
@@ -366,20 +364,17 @@ public class mm {
 
     }
 
-    //public static class IdentityMapper extends Mapper
-   // public static class BlockSumReducer
-
 
     public static void main(String[] args) throws Exception {
 
         final Log log = LogFactory.getLog(mm.class);
         Configuration conf = new Configuration();
-        FileSystem fs =FileSystem.get(conf);
+        FileSystem fs = FileSystem.get(conf);
         Path tmp_path = new Path("/tmp/mmtmp");
         fs = FileSystem.get(conf);
 
         if (fs.exists(tmp_path)) {
-            log.info("YES!");
+            log.info("Deleting /tmp/mmtmp path from hdfs!");
             fs.delete(tmp_path, true);
         }
 
@@ -387,18 +382,19 @@ public class mm {
         tmp_path = new Path("/tmp/mmtmp");
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 
-        if (otherArgs.length != 3) {
+        if (otherArgs.length < 3) {
             System.err.println("Usage: mm <A path> <B path> <C path>");
             System.exit(2);
         }
-        conf.setIfUnset("mm.tags", "ABC");
-        conf.setIfUnset("mm.float-format", "%.3f");
-        conf.setIfUnset("mapred.reduce.tasks", "1");
-        conf.setIfUnset("mm.groups", "2");
+//        conf.setIfUnset("mm.tags", "ABC");
+//        conf.setIfUnset("mm.float-format", "%.3f");
+//        conf.setIfUnset("mapred.reduce.tasks", "1");
+//        conf.setIfUnset("mm.groups", "1");
+
         String tags = conf.get("mm.tags");
-        log.info("mm.tags="+ conf.get("mm.tags"));
-        log.info("mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
-        log.info("mm.groups="+ conf.get("mm.groups"));
+        log.info("input mm.tags="+ conf.get("mm.tags"));
+        log.info("input mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
+        log.info("input mm.groups="+ conf.get("mm.groups"));
 
         assert (tags.length() == 3);
         long m = -1L, n = -1L, p = -1L, n1 = -1L;
@@ -427,6 +423,8 @@ public class mm {
 
         long GROUPS = conf.getLong("mm.groups", 1);
         long BLOCK_SIZE = Math.min(Math.min(m / GROUPS, n / GROUPS), p / GROUPS);
+        BLOCK_SIZE = Math.max(BLOCK_SIZE, 1);
+        log.info("BLOCK_SIZE="+ BLOCK_SIZE);
         conf.set("block_size", Long.toString(BLOCK_SIZE));
 
         Job multBlocks = new Job(conf, "multBlocks");
@@ -452,7 +450,7 @@ public class mm {
         FileOutputFormat.setOutputPath(multBlocks, tmp_path);
 
         Job sumBlocks = new Job(conf, "sumBlocks");
-        //sumBlocks.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
+        sumBlocks.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
         sumBlocks.setJarByClass(mm.class);
 
         sumBlocks.setMapperClass(IdentityMapper.class);
@@ -474,7 +472,6 @@ public class mm {
 
 
 
-        System.exit(multBlocks.waitForCompletion(true)
-                && sumBlocks.waitForCompletion(true)  ? 0 : 1);
+        System.exit(multBlocks.waitForCompletion(true) && sumBlocks.waitForCompletion(true)  ? 0 : 1);
     }
 }
