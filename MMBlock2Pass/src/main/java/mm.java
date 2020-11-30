@@ -49,13 +49,15 @@ public class mm {
         public long getBlockRow(){
             return rowBlock.get();
         }
-
         public long getBlockCol(){
             return colBlock.get();
         }
-
         public long getGroupIdx(){
             return groupIdx.get();
+        }
+        @Override
+        public int hashCode() {
+            return rowBlock.hashCode() + groupIdx.hashCode();
         }
 
         @Override
@@ -143,6 +145,10 @@ public class mm {
             row.readFields(dataInput);
             col.readFields(dataInput);
         }
+        @Override
+        public int hashCode() {
+            return row.hashCode() + col.hashCode();
+        }
 
     }
 
@@ -221,7 +227,7 @@ public class mm {
                 throw new IOException();
             }
 
-            String[] input_record = value.toString().split("\t");
+            String[] input_record = value.toString().split("\\s+");
 //            log.info(input_record[0]);
 //            log.info(input_record[1]);
 //            log.info(input_record[2]);
@@ -239,19 +245,20 @@ public class mm {
                 long blockColumns = P_SIZE / BLOCK_SIZE;
                // log.info("blockColumns="+ blockColumns);
                 for (int i = 0; i < blockColumns; ++i){
-                    //log.info(row / BLOCK_SIZE + " " + col / BLOCK_SIZE+ " " + i);
+                    log.info("key=" + row / BLOCK_SIZE + " " + col / BLOCK_SIZE+ " " + i);
+                    log.info("value=" + " " + MatrixTag +" " + row % BLOCK_SIZE + " " + col % BLOCK_SIZE + " " + val);
                     context.write(new MatrixBlockKey(row / BLOCK_SIZE, col / BLOCK_SIZE, i),
-                                new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
-                                                    col % BLOCK_SIZE, val));
+                                new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE, col % BLOCK_SIZE, val));
                 }
             }
             else if(MatrixTag.equals(RightMatrixTag)){
                 long blockRows = M_SIZE / BLOCK_SIZE;
                // log.info("blockRows="+ blockRows);
                 for (int i = 0; i < blockRows; ++i){
+                    log.info("key=" + " " + i +" " + row / BLOCK_SIZE + " " + col / BLOCK_SIZE);
+                    log.info("value=" + " " + MatrixTag +" " + row % BLOCK_SIZE + " " + col % BLOCK_SIZE + " " + val);
                     context.write(new MatrixBlockKey(i, row / BLOCK_SIZE, col / BLOCK_SIZE),
-                            new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE,
-                                    col % BLOCK_SIZE, val));
+                            new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE, col % BLOCK_SIZE, val));
                 }
             }
             else{
@@ -266,7 +273,6 @@ public class mm {
     public static class MultBlockReducer extends Reducer<MatrixBlockKey, MatrixBlockValue, MatrixIndexes, DoubleWritable> {
         public static final Log log = LogFactory.getLog(MultBlockReducer.class);
 
-
         @Override
         public void reduce(MatrixBlockKey key, Iterable<MatrixBlockValue>  values, Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
@@ -279,9 +285,9 @@ public class mm {
 
             double[][] leftBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
             double[][] rightBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
-
+            log.info("key in reduce = "+rowShift+" "+ key.getBlockCol()+" "+colShift);
             for (MatrixBlockValue value : values) {
-                //log.info("value="+value);
+                log.info("value="+value.getValue());
                 int i = (int) value.getRowLocal();
                 int j = (int) value.getColLocal();
                 if (value.getMatrixTag().toString().equals(LeftMatrixTag)) {
@@ -301,7 +307,7 @@ public class mm {
                 for (int j = 0; j < BLOCK_SIZE; ++j) {
                     double outputElemPart = 0.0;
                     for (int k = 0; k < BLOCK_SIZE; ++k) {
-                        outputElemPart += leftBlock[i][k] * rightBlock[k][j];
+                        outputElemPart = outputElemPart + leftBlock[i][k] * rightBlock[k][j];
                     }
 
                     context.write(new MatrixIndexes(rowShift*BLOCK_SIZE + i,
@@ -370,31 +376,31 @@ public class mm {
         final Log log = LogFactory.getLog(mm.class);
         Configuration conf = new Configuration();
         FileSystem fs = FileSystem.get(conf);
-        Path tmp_path = new Path("/tmp/mmtmp");
+        Path tmp_path = new Path("tmp");
         fs = FileSystem.get(conf);
 
-        if (fs.exists(tmp_path)) {
-            log.info("Deleting /tmp/mmtmp path from hdfs!");
-            fs.delete(tmp_path, true);
-        }
+//        if (fs.exists(tmp_path)) {
+//            log.info("Deleting /tmp/mmtmp path from hdfs!");
+//            fs.delete(tmp_path, true);
+//        }
 
         //conf.set("hadoop.tmp.dir","/tmp/mmtmp");
-        tmp_path = new Path("/tmp/mmtmp");
+        tmp_path = new Path("tmp");
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 
         if (otherArgs.length < 3) {
             System.err.println("Usage: mm <A path> <B path> <C path>");
-            System.exit(2);
+            System.exit(1);
         }
-//        conf.setIfUnset("mm.tags", "ABC");
-//        conf.setIfUnset("mm.float-format", "%.3f");
-//        conf.setIfUnset("mapred.reduce.tasks", "1");
-//        conf.setIfUnset("mm.groups", "1");
+        conf.setIfUnset("mm.tags", "ABC");
+        conf.setIfUnset("mm.float-format", "%.3f");
+        conf.setIfUnset("mapred.reduce.tasks", "1");
+        conf.setIfUnset("mm.groups", "1");
 
         String tags = conf.get("mm.tags");
-        log.info("input mm.tags="+ conf.get("mm.tags"));
-        log.info("input mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
-        log.info("input mm.groups="+ conf.get("mm.groups"));
+//        log.info("input mm.tags="+ conf.get("mm.tags"));
+//        log.info("input mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
+//        log.info("input mm.groups="+ conf.get("mm.groups"));
 
         assert (tags.length() == 3);
         long m = -1L, n = -1L, p = -1L, n1 = -1L;
@@ -440,14 +446,14 @@ public class mm {
         multBlocks.setMapOutputKeyClass(MatrixBlockKey.class);
         multBlocks.setMapOutputValueClass(MatrixBlockValue.class);
 
-        multBlocks.setOutputKeyClass(Text.class);
-        multBlocks.setOutputValueClass(Text.class);
-
+        multBlocks.setOutputKeyClass(MatrixIndexes.class);
+        multBlocks.setOutputValueClass(DoubleWritable.class);
 
         String pathLeft = otherArgs[0]+ "/data";
         String pathRight = otherArgs[1]+ "/data";
         FileInputFormat.addInputPaths(multBlocks, pathLeft + "," + pathRight);
         FileOutputFormat.setOutputPath(multBlocks, tmp_path);
+        multBlocks.waitForCompletion(true);
 
         Job sumBlocks = new Job(conf, "sumBlocks");
         sumBlocks.setNumReduceTasks(conf.getInt("mapred.reduce.tasks", 1));
@@ -469,9 +475,6 @@ public class mm {
         FSDataOutputStream os = fs.create(new Path(otherArgs[2] + "/size"));
         os.writeBytes(m + "\t" + p);
         os.close();
-
-
-
-        System.exit(multBlocks.waitForCompletion(true) && sumBlocks.waitForCompletion(true)  ? 0 : 1);
+        System.exit(sumBlocks.waitForCompletion(true)  ? 0 : 1);
     }
 }
