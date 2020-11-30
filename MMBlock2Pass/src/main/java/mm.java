@@ -55,6 +55,7 @@ public class mm {
         public long getGroupIdx(){
             return groupIdx.get();
         }
+
         @Override
         public int hashCode() {
             return rowBlock.hashCode() + groupIdx.hashCode();
@@ -221,17 +222,12 @@ public class mm {
             long N_SIZE = conf.getLong("n_size", -1);
             long P_SIZE = conf.getLong("p_size", -1);
 
-           // log.info("block_size=" + BLOCK_SIZE + " M_SIZE" + M_SIZE + " N_SIZE=" + N_SIZE + " P_size=" + P_SIZE);
 
             if( M_SIZE == -1 || N_SIZE == -1 || P_SIZE == -1 || BLOCK_SIZE == -1){
                 throw new IOException();
             }
 
             String[] input_record = value.toString().split("\\s+");
-//            log.info(input_record[0]);
-//            log.info(input_record[1]);
-//            log.info(input_record[2]);
-//            log.info(input_record[3]);
 
             String MatrixTag = input_record[0];
             long row =  Long.parseLong(input_record[1]);
@@ -243,20 +239,14 @@ public class mm {
 
             if(MatrixTag.equals(LeftMatrixTag)){
                 long blockColumns = P_SIZE / BLOCK_SIZE;
-               // log.info("blockColumns="+ blockColumns);
                 for (int i = 0; i < blockColumns; ++i){
-                    log.info("key=" + row / BLOCK_SIZE + " " + col / BLOCK_SIZE+ " " + i);
-                    log.info("value=" + " " + MatrixTag +" " + row % BLOCK_SIZE + " " + col % BLOCK_SIZE + " " + val);
                     context.write(new MatrixBlockKey(row / BLOCK_SIZE, col / BLOCK_SIZE, i),
                                 new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE, col % BLOCK_SIZE, val));
                 }
             }
             else if(MatrixTag.equals(RightMatrixTag)){
                 long blockRows = M_SIZE / BLOCK_SIZE;
-               // log.info("blockRows="+ blockRows);
                 for (int i = 0; i < blockRows; ++i){
-                    log.info("key=" + " " + i +" " + row / BLOCK_SIZE + " " + col / BLOCK_SIZE);
-                    log.info("value=" + " " + MatrixTag +" " + row % BLOCK_SIZE + " " + col % BLOCK_SIZE + " " + val);
                     context.write(new MatrixBlockKey(i, row / BLOCK_SIZE, col / BLOCK_SIZE),
                             new MatrixBlockValue(MatrixTag, row % BLOCK_SIZE, col % BLOCK_SIZE, val));
                 }
@@ -285,9 +275,7 @@ public class mm {
 
             double[][] leftBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
             double[][] rightBlock = new double[BLOCK_SIZE][BLOCK_SIZE];
-            log.info("key in reduce = "+rowShift+" "+ key.getBlockCol()+" "+colShift);
             for (MatrixBlockValue value : values) {
-                log.info("value="+value.getValue());
                 int i = (int) value.getRowLocal();
                 int j = (int) value.getColLocal();
                 if (value.getMatrixTag().toString().equals(LeftMatrixTag)) {
@@ -333,12 +321,10 @@ public class mm {
 
 
             String[] splittedValues = value.toString().split("\\s+");
-           // log.info("Identity Mapper: " + value.toString());
             long row = Long.parseLong(splittedValues[0]);
             long col = Long.parseLong(splittedValues[1]);
 
             double valueofMatrix = Double.parseDouble(splittedValues[2]);
-         //   log.info("row=" + row + " col=" + col + " Val=" + valueofMatrix);
             context.write(new MatrixIndexes(row, col), new DoubleWritable(valueofMatrix));
         }
     }
@@ -360,7 +346,6 @@ public class mm {
 
             String valueFormat = conf.get("mm.float-format", "%.3f");
             String OutputTag = conf.get("mm.tags").substring(2, 3);
-            //log.info("OUTPUTTAG=" + OutputTag);
             String valueFormatted = String.format(Locale.ENGLISH, valueFormat, outputValueFull);
             String outputStr =  OutputTag + "\t" +  key.getRow()  + "\t" +  key.getCol()  + "\t" + valueFormatted;
             if(Math.abs(outputValueFull - 0.0) > epsilon){
@@ -398,9 +383,6 @@ public class mm {
         conf.setIfUnset("mm.groups", "1");
 
         String tags = conf.get("mm.tags");
-//        log.info("input mm.tags="+ conf.get("mm.tags"));
-//        log.info("input mapred.reduce.tasks="+ conf.get("mapred.reduce.tasks"));
-//        log.info("input mm.groups="+ conf.get("mm.groups"));
 
         assert (tags.length() == 3);
         long m = -1L, n = -1L, p = -1L, n1 = -1L;
@@ -430,7 +412,7 @@ public class mm {
         long GROUPS = conf.getLong("mm.groups", 1);
         long BLOCK_SIZE = Math.min(Math.min(m / GROUPS, n / GROUPS), p / GROUPS);
         BLOCK_SIZE = Math.max(BLOCK_SIZE, 1);
-        log.info("BLOCK_SIZE="+ BLOCK_SIZE);
+        log.info("COMPUTED BLOCK_SIZE="+ BLOCK_SIZE);
         conf.set("block_size", Long.toString(BLOCK_SIZE));
 
         Job multBlocks = new Job(conf, "multBlocks");
