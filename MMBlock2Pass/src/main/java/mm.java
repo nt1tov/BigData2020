@@ -370,13 +370,14 @@ public class mm {
 //        }
 
         //conf.set("hadoop.tmp.dir","/tmp/mmtmp");
-        tmp_path = new Path("tmp");
+
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 
         if (otherArgs.length < 3) {
             System.err.println("Usage: mm <A path> <B path> <C path>");
             System.exit(1);
         }
+        tmp_path = new Path(otherArgs[2] + "/tmp");
         conf.setIfUnset("mm.tags", "ABC");
         conf.setIfUnset("mm.float-format", "%.3f");
         conf.setIfUnset("mapred.reduce.tasks", "1");
@@ -387,9 +388,8 @@ public class mm {
         assert (tags.length() == 3);
         long m = -1L, n = -1L, p = -1L, n1 = -1L;
 
-
         fs =FileSystem.get(conf);
-        BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[1] + "/size"))));
+        BufferedReader bufReader = new BufferedReader(new InputStreamReader(fs.open(new Path(otherArgs[0] + "/size"))));
         String[] size_str = bufReader.readLine().split("\t");
         m = Long.parseLong(size_str[0]);
         n = Long.parseLong(size_str[1]);
