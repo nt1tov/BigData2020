@@ -78,8 +78,8 @@ public class candle {
 
             endkey.set(SYMBOL + "," + CANDLE_MOMENT);
             endval.set(MOMENT + "," + PRICE + "," + ID );
-            log.info(endkey.toString());
-            log.info(endval.toString());
+            //log.info(endkey.toString());
+            //log.info(endval.toString());
 
             context.write(endkey, endval);
         }
@@ -97,11 +97,11 @@ public class candle {
             int id_close = -1;
             int idx = 0;
             res_key = key;
-            log.info("****");
-            log.info(key.toString());
+            //log.info("****");
+            //log.info(key.toString());
 
             for(Object value: values){
-                log.info(value.toString());
+              //  log.info(value.toString());
                 String[] value_split = value.toString().split(",");
                 long val_moment =  Long.parseLong(value_split[0]);
                 double val_price = Double.parseDouble((value_split[1]));
@@ -136,6 +136,8 @@ public class candle {
     }
 
     public static void main(String[] args) throws Exception {
+        Log log = LogFactory.getLog(candle.class);
+
         Configuration conf = new Configuration();
         String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
         if (otherArgs.length != 2) {
@@ -150,6 +152,14 @@ public class candle {
         conf.setIfUnset("candle.time.from", "1000");
         conf.setIfUnset("candle.time.to", "2300");
         conf.setIfUnset("candle.num.reducers", "1");
+
+        log.info("candle.width=" + conf.get("candle.width"));
+        log.info("candle.securities=" + conf.get("candle.securities"));
+        log.info("candle.date.from=" + conf.get("candle.date.from"));
+        log.info("candle.date.to=" + conf.get("candle.date.to"));
+        log.info("candle.time.from=" + conf.get("candle.time.from"));
+        log.info("candle.time.to=" + conf.get("candle.time.to"));
+        log.info("candle.num.reducers=" + conf.get("candle.num.reducers"));
 
         Job job = new Job(conf, "candle");
         job.setNumReduceTasks(conf.getInt("candle.num.reducers", 1));

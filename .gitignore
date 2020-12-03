@@ -1,7 +1,7 @@
 #intellij idea
 .idea/
 target/
-
+./MMBlock2Pass/tmp
 
 # Compiled class file
 *.class
