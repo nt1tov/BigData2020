@@ -1,6 +1,6 @@
 #intellij idea
 .idea/
-target/
+#target/
 ./MMBlock2Pass/tmp
 
 # Compiled class file
@@ -16,7 +16,7 @@ target/
 .mtj.tmp/
 
 # Package Files #
-*.jar
+#*.jar
 *.war
 *.nar
 *.ear
