@@ -12,6 +12,7 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.commons.logging.LogFactory;
+import sun.awt.Symbol;
 
 public class candle {
     public static class TokenizerMapper extends Mapper<Object, Text, Text, Text>{
@@ -28,7 +29,9 @@ public class candle {
             String MOMENT = record_split[1];
             String PRICE = record_split[2];
             String ID = record_split[3];
-          //  log.info(value.toString());
+
+
+          //  log.info(SYMBOL + " " + MOMENT + " " + PRICE + " " + ID );
             String sec_ptrn = conf.get("candle.securities");
             assert sec_ptrn != null;
             // cut
@@ -40,25 +43,30 @@ public class candle {
             }
 
             if(!SYMBOL.matches(sec_ptrn)){
+               // log.info("pattern="+ sec_ptrn);
+               // log.info("sumbol=" + SYMBOL);
                 return;
             }
             // HHmmss
+            //log.info("OK1");
             String cur_time_sec = MOMENT.substring(8,12); //hh:mm::ss HHmmss
             String time_from = conf.get("candle.time.from");
             String time_to = conf.get("candle.time.to");
 
-
+            String cur_time_hhmm = MOMENT.substring(8,12);
+           // log.info(cur_time_sec);
             if (cur_time_sec.compareTo(time_to) >= 0 || cur_time_sec.compareTo(time_from) < 0){
                 return;
             }
-
-            String cur_date = MOMENT.substring(0, 7);
+           // log.info("OK SEC");
+            String cur_date = MOMENT.substring(0, 8);
             String date_from = conf.get("candle.date.from");
             String date_to = conf.get("candle.date.to");
             if (cur_date.compareTo(date_to) >= 0 || cur_date.compareTo(date_from) < 0){
+               // log.info(cur_date);
                 return;
             }
-
+          //  log.info("OK DATE");
             long width = Long.parseLong(conf.get("candle.width"));
 
             String cur_time_full = MOMENT.substring(8);
@@ -71,15 +79,16 @@ public class candle {
             long time_ms = hrs*60*60*1000 + mins*60*1000 + sec*1000 + ms;
 
             long out_time_ms = (time_ms / width) * width;
-            String CANDLE_MOMENT = cur_date + Long.toString(out_time_ms / (60 * 60 * 1000))
-                                    + Long.toString(out_time_ms / (60 * 1000))
-                                    + Long.toString(out_time_ms / (1000))
-                                    + Long.toString(out_time_ms % (1000));
+            String CANDLE_MOMENT = cur_date + out_time_ms / (60 * 60 * 1000)
+                                    + out_time_ms / (60 * 1000)
+                                    + out_time_ms / (1000)
+                                    + out_time_ms % (1000);
 
             endkey.set(SYMBOL + "," + CANDLE_MOMENT);
             endval.set(MOMENT + "," + PRICE + "," + ID );
-            //log.info(endkey.toString());
-            //log.info(endval.toString());
+
+          //  log.info(endkey.toString());
+          //  log.info(endval.toString());
 
             context.write(endkey, endval);
         }

@@ -1,0 +1,18 @@
+<configuration>
+    <property>
+        <name>candle.securities</name>
+        <value>RIH1</value>
+    </property>
+    <property>
+        <name>candle.date.from</name>
+        <value>20110111</value>
+    </property>
+    <property>
+        <name>candle.date.to</name>
+        <value>20110112</value>
+    </property>
+    <property>
+        <name>candle.num.reducers</name>
+        <value>10</value>
+    </property>
+</configuration>
