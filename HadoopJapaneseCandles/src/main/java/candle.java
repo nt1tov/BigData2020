@@ -48,14 +48,14 @@ public class candle {
             String time_to = conf.get("candle.time.to");
 
 
-            if (cur_time_sec.compareTo(time_to) > 0 || cur_time_sec.compareTo(time_from) < 0){
+            if (cur_time_sec.compareTo(time_to) >= 0 || cur_time_sec.compareTo(time_from) < 0){
                 return;
             }
 
             String cur_date = MOMENT.substring(0, 7);
             String date_from = conf.get("candle.date.from");
             String date_to = conf.get("candle.date.to");
-            if (cur_date.compareTo(date_to) > 0 || cur_date.compareTo(date_from) < 0){
+            if (cur_date.compareTo(date_to) >= 0 || cur_date.compareTo(date_from) < 0){
                 return;
             }
 
