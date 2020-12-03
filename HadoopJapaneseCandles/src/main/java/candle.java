@@ -3,6 +3,7 @@ import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import CSVReader.CSVHeaderFormat;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -84,7 +85,7 @@ public class candle {
         }
     }
 
-    public static class IntSumReducer extends Reducer<Text, Text, Text, Text> {
+    public static class IntSumReducer extends Reducer<Text, Text, NullWritable, Text> {
         public static final Log log = LogFactory.getLog(IntSumReducer.class); // поле класса
         private Text res_key = new Text();
         private Text res_values = new Text();
@@ -124,9 +125,13 @@ public class candle {
                     HIGH  = val_price;
                 }
             }
-            log.info("***");
-            res_values.set(Double.toString(OPEN) + "," +  Double.toString(HIGH) + Double.toString(LOW) + Double.toString(CLOSE));
-            context.write(res_key, res_values);
+//            log.info("***");
+            String OPEN_STR = String.format("%.1f", OPEN);
+            String HIGH_STR = String.format("%.1f", HIGH);
+            String LOW_STR = String.format("%.1f", LOW);
+            String CLOSE_STR = String.format("%.1f", CLOSE);
+            res_values.set(key.toString() + "," + OPEN_STR + "," + HIGH_STR + "," + LOW_STR +"," + CLOSE_STR);
+            context.write(NullWritable.get(), res_values);
         }
     }
 
@@ -137,6 +142,7 @@ public class candle {
             System.err.println("Usage: candle <in> <out>");
             System.exit(2);
         }
+
         conf.setIfUnset("candle.width", "300000");
         conf.setIfUnset("candle.securities", ".*");
         conf.setIfUnset("candle.date.from", "19000101");
@@ -145,9 +151,8 @@ public class candle {
         conf.setIfUnset("candle.time.to", "2300");
         conf.setIfUnset("candle.num.reducers", "1");
 
-
         Job job = new Job(conf, "candle");
-       // job.setNumReduceTasks(conf.getInt("candle.num.reducers", 1));
+        job.setNumReduceTasks(conf.getInt("candle.num.reducers", 1));
         job.setJarByClass(candle.class);
         job.setMapperClass(TokenizerMapper.class);
         job.setReducerClass(IntSumReducer.class);
@@ -156,7 +161,7 @@ public class candle {
         job.setMapOutputValueClass(Text.class);
 
         job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(Text.class);
+        job.setOutputValueClass(NullWritable.class);
 
         job.setInputFormatClass(CSVHeaderFormat.class);
 
